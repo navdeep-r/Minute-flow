@@ -48,7 +48,7 @@ let hasMeetingStarted = false
 let hasMeetingEnded = false
 
 /** @type {ExtensionStatusJSON} */
-let extensionStatusJSON = { status: 200, message: "<strong>MINUTE FLOW IS HEARING😎</strong> <br /> Do not turn off captions" }
+let extensionStatusJSON = { status: 200, message: "<strong>Minute Flow is listening</strong> <br />" }
 
 const CAPTION_BATCH_INTERVAL_MS = 30000
 /** @type {number | null} */
@@ -729,65 +729,269 @@ async function waitForElement(selector, text) {
 }
 
 /**
- * @description Shows a responsive notification of specified type and message
+ * @description Shows a responsive notification of specified type and message with space theme and typewriter effect
  * @param {ExtensionStatusJSON} extensionStatusJSON
  */
 function showNotification(extensionStatusJSON) {
-  // Banner CSS
   let html = document.querySelector("html")
   let obj = document.createElement("div")
   let logo = document.createElement("img")
   let text = document.createElement("p")
+  let iconWrapper = document.createElement("div")
+  let particleCanvas = document.createElement("canvas")
+  let statusIndicator = document.createElement("div")
+
+  const notificationId = `minute-flow-notification-${Date.now()}`
+  obj.setAttribute("id", notificationId)
+  obj.setAttribute("class", "minute-flow-notification")
 
   logo.setAttribute(
     "src",
     "https://ejnana.github.io/transcripto-status/icon.png"
   )
-  logo.setAttribute("height", "32px")
-  logo.setAttribute("width", "32px")
-  logo.style.cssText = "border-radius: 4px"
+  logo.setAttribute("height", "45px")
+  logo.setAttribute("width", "45px")
+  logo.style.cssText = "border-radius: 12px; transition: all 0.4s ease; filter: drop-shadow(0 0 8px rgba(42, 154, 202, 0.6));"
 
-  // Remove banner after 5s
-  setTimeout(() => {
-    obj.style.display = "none"
-  }, 5000)
+  // Animated icon wrapper with glow
+  iconWrapper.style.cssText = "position: relative; display: flex; align-items: center; justify-content: center; z-index: 2;"
+  iconWrapper.appendChild(logo)
 
+  // Status indicator pulse
+  statusIndicator.style.cssText = `
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #00ff88;
+    box-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88;
+    animation: minuteFlowPulse 2s ease-in-out infinite;
+    z-index: 3;
+  `
+  iconWrapper.appendChild(statusIndicator)
+
+  // Canvas for particle effect
+  particleCanvas.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    border-radius: 16px;
+    z-index: 1;
+  `
+  particleCanvas.width = 600
+  particleCanvas.height = 100
+
+  // Style based on status
   if (extensionStatusJSON.status === 200) {
-    obj.style.cssText = `color: #2A9ACA; ${commonCSS}`
-    text.innerHTML = extensionStatusJSON.message
+    obj.style.cssText = `${commonCSS} ${successGradient}`
   }
   else {
-    obj.style.cssText = `color: orange; ${commonCSS}`
-    text.innerHTML = extensionStatusJSON.message
+    obj.style.cssText = `${commonCSS} ${errorGradient}`
+    statusIndicator.style.background = "#ff6b6b"
+    statusIndicator.style.boxShadow = "0 0 10px #ff6b6b, 0 0 20px #ff6b6b"
   }
 
-  obj.prepend(text)
-  obj.prepend(logo)
-  if (html)
-    html.append(obj)
+  text.style.cssText = "margin: 0; font-weight: 600; letter-spacing: 0.5px; z-index: 2; position: relative;"
+
+  obj.appendChild(particleCanvas)
+  obj.appendChild(iconWrapper)
+  obj.appendChild(text)
+  
+  if (html) {
+    html.appendChild(obj)
+    
+    // Particle animation
+    const ctx = particleCanvas.getContext('2d')
+    if (ctx) {
+      /** @type {Array<{x: number, y: number, vx: number, vy: number, size: number}>} */
+      const particles = []
+      for (let i = 0; i < 30; i++) {
+        particles.push({
+          x: Math.random() * 600,
+          y: Math.random() * 100,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: (Math.random() - 0.5) * 0.5,
+          size: Math.random() * 2 + 0.5
+        })
+      }
+      
+      const context = ctx
+      function animateParticles() {
+        context.clearRect(0, 0, 600, 100)
+        context.fillStyle = extensionStatusJSON.status === 200 ? 'rgba(42, 154, 202, 0.6)' : 'rgba(255, 107, 107, 0.6)'
+        
+        particles.forEach(p => {
+          context.beginPath()
+          context.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+          context.fill()
+          
+          p.x += p.vx
+          p.y += p.vy
+          
+          if (p.x < 0 || p.x > 600) p.vx *= -1
+          if (p.y < 0 || p.y > 100) p.vy *= -1
+        })
+        
+        if (obj.parentElement) {
+          requestAnimationFrame(animateParticles)
+        }
+      }
+      animateParticles()
+    }
+    
+    // Typewriter effect
+    const fullMessage = extensionStatusJSON.message
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = fullMessage
+    const textContent = tempDiv.textContent || tempDiv.innerText || ''
+    
+    let charIndex = 0
+    text.innerHTML = ''
+    
+    function typeWriter() {
+      if (charIndex < textContent.length) {
+        text.innerHTML = fullMessage.substring(0, charIndex + 1)
+        charIndex++
+        setTimeout(typeWriter, 30)
+      }
+    }
+    
+    // Trigger entrance animation
+    requestAnimationFrame(() => {
+      obj.style.animation = "minuteFlowSpaceEntry 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards"
+      setTimeout(typeWriter, 400)
+    })
+
+    // Hover effects
+    obj.addEventListener("mouseenter", () => {
+      logo.style.transform = "scale(1.2) rotate(360deg)"
+      logo.style.filter = "drop-shadow(0 0 15px rgba(42, 154, 202, 1))"
+      obj.style.transform = "translateY(-4px) scale(1.02)"
+      obj.style.boxShadow = "0 25px 70px rgba(0, 0, 0, 0.3), 0 0 60px rgba(42, 154, 202, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.1)"
+    })
+    
+    obj.addEventListener("mouseleave", () => {
+      logo.style.transform = "scale(1) rotate(0deg)"
+      logo.style.filter = "drop-shadow(0 0 8px rgba(42, 154, 202, 0.6))"
+      obj.style.transform = "translateY(0) scale(1)"
+      obj.style.boxShadow = "0 15px 50px rgba(0, 0, 0, 0.2), 0 0 40px rgba(42, 154, 202, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.6)"
+    })
+
+    // Exit animation
+    setTimeout(() => {
+      obj.style.animation = "minuteFlowSpaceExit 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards"
+      setTimeout(() => {
+        obj.remove()
+      }, 600)
+    }, 6000)
+  }
 }
 
-// CSS for notification
-const commonCSS = `background: rgb(255 255 255 / 100%); 
-    backdrop-filter: blur(16px); 
+// Inject keyframe animations into page
+if (!document.getElementById('minute-flow-animations')) {
+  const styleSheet = document.createElement('style')
+  styleSheet.id = 'minute-flow-animations'
+  styleSheet.textContent = `
+    @keyframes minuteFlowSpaceEntry {
+      0% {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.8) rotateX(20deg);
+        filter: blur(10px);
+      }
+      60% {
+        opacity: 1;
+        transform: translateY(5px) scale(1.05) rotateX(-5deg);
+        filter: blur(0px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1) rotateX(0deg);
+        filter: blur(0px);
+      }
+    }
+    
+    @keyframes minuteFlowSpaceExit {
+      0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0px);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-40px) scale(0.9);
+        filter: blur(8px);
+      }
+    }
+    
+    @keyframes minuteFlowPulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.3);
+        opacity: 0.7;
+      }
+    }
+    
+    @keyframes minuteFlowShimmer {
+      0% {
+        background-position: -1000px 0;
+      }
+      100% {
+        background-position: 1000px 0;
+      }
+    }
+  `
+  document.head.appendChild(styleSheet)
+}
+
+// CSS for notification with space theme glassmorphism
+const commonCSS = `
+    background: linear-gradient(135deg, rgba(10, 15, 30, 0.95) 0%, rgba(20, 25, 45, 0.9) 100%);
+    backdrop-filter: blur(25px) saturate(200%);
+    -webkit-backdrop-filter: blur(25px) saturate(200%);
     position: fixed;
-    top: 5%; 
-    left: 0; 
-    right: 0; 
-    margin-left: auto; 
-    margin-right: auto;
-    max-width: 780px;  
-    z-index: 1000; 
-    padding: 0rem 1rem;
-    border-radius: 8px; 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    gap: 16px;  
-    font-size: 1rem; 
-    line-height: 1.5; 
-    font-family: "Google Sans",Roboto,Arial,sans-serif; 
-    box-shadow: rgba(0, 0, 0, 0.16) 0px 10px 36px 0px, rgba(0, 0, 0, 0.06) 0px 0px 0px 1px;`
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 550px;
+    width: 92%;
+    z-index: 999999;
+    padding: 1.3rem 1.7rem;
+    border-radius: 18px;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 20px;
+    font-size: 1rem;
+    line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Google Sans", "Space Grotesk", Arial, sans-serif;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2), 0 0 40px rgba(42, 154, 202, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    border: 1.5px solid rgba(42, 154, 202, 0.3);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
+    user-select: none;
+    overflow: hidden;
+    perspective: 1000px;
+`
+
+const successGradient = `
+    color: #e0f7ff;
+    background: linear-gradient(135deg, rgba(10, 15, 30, 0.95) 0%, rgba(15, 30, 50, 0.92) 50%, rgba(20, 25, 45, 0.9) 100%);
+    border-color: rgba(42, 154, 202, 0.5);
+`
+
+const errorGradient = `
+    color: #ffe0e0;
+    background: linear-gradient(135deg, rgba(30, 10, 15, 0.95) 0%, rgba(40, 15, 20, 0.92) 50%, rgba(35, 15, 20, 0.9) 100%);
+    border-color: rgba(255, 107, 107, 0.5);
+`
 
 
 /**
@@ -822,7 +1026,7 @@ function meetsMinVersion(oldVer, newVer) {
 function checkExtensionStatus() {
   return new Promise((resolve, reject) => {
     // Set default value as 200
-    extensionStatusJSON = { status: 200, message: "<strong>MINUTE FLOW IS HEARING😎</strong> <br /> Do not turn off captions" }
+    extensionStatusJSON = { status: 200, message: "<strong>Minute Flow is listening</strong> <br /> Do not turn off captions" }
 
     // https://stackoverflow.com/a/42518434
     fetch(
@@ -841,7 +1045,10 @@ function checkExtensionStatus() {
         else {
           // Update status based on response
           extensionStatusJSON.status = result.status
-          extensionStatusJSON.message = result.message
+          // Only override message if status is not 200 (keep local message for success case)
+          if (result.status !== 200) {
+            extensionStatusJSON.message = result.message
+          }
         }
 
         console.log("Extension status fetched and saved")
