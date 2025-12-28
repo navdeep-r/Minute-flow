@@ -75,6 +75,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   if (Object.prototype.hasOwnProperty.call(changes, "webhookUrl") && hasMeetingStarted) {
     const webhookChange = changes.webhookUrl
+    console.log("[Caption Batch] Webhook URL changed:", webhookChange?.newValue || "REMOVED")
     if (webhookChange?.newValue) {
       isCaptionBatchStreamingEnabled = true
       startCaptionBatchTimer()
@@ -111,10 +112,6 @@ Promise.race([
 
 
 
-//*********** MAIN FUNCTIONS **********//
-checkExtensionStatus().finally(() => {
-  console.log("Extension status " + extensionStatusJSON.status)
-
   // Enable extension functions only if status is 200
   if (extensionStatusJSON.status === 200) {
     // NON CRITICAL DOM DEPENDENCY. Attempt to get username before meeting starts. Abort interval if valid username is found or if meeting starts and default to "You".
@@ -145,7 +142,6 @@ checkExtensionStatus().finally(() => {
     showNotification(extensionStatusJSON)
   }
 
-})
 
 
 /**
@@ -459,6 +455,7 @@ function pushBufferToTranscript() {
     "timestamp": timestampBuffer,
     "transcriptText": transcriptTextBuffer
   }
+  console.log(`[Caption Captured] ${transcriptBlock.personName}: ${transcriptBlock.transcriptText}`)
   transcript.push(transcriptBlock)
   lastStreamedBufferLength = 0
   overWriteChromeStorage(["transcript"], false)
@@ -481,6 +478,7 @@ function pushUniqueChatBlock(chatBlock) {
 }
 
 function initializeCaptionBatchStreaming() {
+  console.log("[Caption Batch] Initializing caption batch streaming...")
   lastStreamedTranscriptIndex = 0
   lastStreamedBufferLength = 0
 
@@ -488,18 +486,24 @@ function initializeCaptionBatchStreaming() {
     const resultSync = /** @type {ResultSync} */ (resultSyncUntyped)
     captionBatchBodyType = resultSync.webhookBodyType === "advanced" ? "advanced" : "simple"
 
+    console.log("[Caption Batch] Webhook URL:", resultSync.webhookUrl || "NOT CONFIGURED")
+    console.log("[Caption Batch] Body type:", captionBatchBodyType)
+
     if (resultSync.webhookUrl) {
       isCaptionBatchStreamingEnabled = true
+      console.log("[Caption Batch] Streaming ENABLED - Starting timer")
       startCaptionBatchTimer()
     }
     else {
       isCaptionBatchStreamingEnabled = false
+      console.log("[Caption Batch] Streaming DISABLED - No webhook URL configured")
     }
   })
 }
 
 function startCaptionBatchTimer() {
   if (!isCaptionBatchStreamingEnabled) {
+    console.log("[Caption Batch] Timer NOT started - streaming disabled")
     return
   }
 
@@ -507,6 +511,7 @@ function startCaptionBatchTimer() {
   captionBatchTimerId = window.setInterval(() => {
     flushCaptionBatch("interval")
   }, CAPTION_BATCH_INTERVAL_MS)
+  console.log(`[Caption Batch] Timer started - will flush every ${CAPTION_BATCH_INTERVAL_MS / 1000} seconds`)
 }
 
 /**
@@ -555,8 +560,15 @@ function flushCaptionBatch(reason) {
   }
 
   if (pendingBatch.length === 0) {
+    console.log(`[Caption Batch] No new captions to send (reason: ${reason})`)
     return
   }
+
+  // Log captured captions
+  console.log(`[Caption Batch] Sending ${pendingBatch.length} caption(s) (reason: ${reason}):`)
+  pendingBatch.forEach((block, index) => {
+    console.log(`  ${index + 1}. [${block.personName}] ${block.transcriptText}`)
+  })
 
   const batchStartTimestamp = pendingBatch[0].timestamp
   const batchEndTimestamp = pendingBatch[pendingBatch.length - 1].timestamp
@@ -579,18 +591,19 @@ function flushCaptionBatch(reason) {
   chrome.runtime.sendMessage(message, (responseUntyped) => {
     const lastError = chrome.runtime.lastError
     if (lastError) {
-      console.error("Caption batch send failed:", lastError.message)
+      console.error("[Caption Batch] Send failed:", lastError.message)
       return
     }
     const response = /** @type {ExtensionResponse} */ (responseUntyped)
     if (response && response.success) {
+      console.log(`[Caption Batch] Successfully sent ${pendingBatch.length} caption(s)`)
       lastStreamedTranscriptIndex = transcript.length
       if (hasBufferDelta) {
         lastStreamedBufferLength = transcriptTextBuffer.length
       }
     }
     else if (response && !response.success && typeof response.message === "object") {
-      console.error("Caption batch send failed:", response.message.errorMessage)
+      console.error("[Caption Batch] Send failed:", response.message.errorMessage)
     }
   })
 }
@@ -1003,65 +1016,6 @@ function logError(code, err) {
   fetch(`https://script.google.com/macros/s/AKfycbwN-bVkVv3YX4qvrEVwG9oSup0eEd3R22kgKahsQ3bCTzlXfRuaiO7sUVzH9ONfhL4wbA/exec?version=${chrome.runtime.getManifest().version}&code=${code}&error=${encodeURIComponent(err)}&meetingSoftware=${meetingSoftware}`, { mode: "no-cors" })
 }
 
-/**
- * @description Checks if the installed extension version meets the minimum required version.
- * @param {string} oldVer
- * @param {string} newVer
- */
-function meetsMinVersion(oldVer, newVer) {
-  const oldParts = oldVer.split('.')
-  const newParts = newVer.split('.')
-  for (var i = 0; i < newParts.length; i++) {
-    const a = ~~newParts[i] // parse int
-    const b = ~~oldParts[i] // parse int
-    if (a > b) return false
-    if (a < b) return true
-  }
-  return true
-}
-
-/**
- * @description Fetches extension status from GitHub and saves to chrome storage. Defaults to 200, if remote server is unavailable.
- */
-function checkExtensionStatus() {
-  return new Promise((resolve, reject) => {
-    // Set default value as 200
-    extensionStatusJSON = { status: 200, message: "<strong>Minute Flow is listening</strong> <br /> Do not turn off captions" }
-
-    // https://stackoverflow.com/a/42518434
-    fetch(
-      "https://ejnana.github.io/transcripto-status/status-prod-meet.json",
-      { cache: "no-store" }
-    )
-      .then((response) => response.json())
-      .then((result) => {
-        const minVersion = result.minVersion
-
-        // Disable extension if version is below the min version
-        if (!meetsMinVersion(chrome.runtime.getManifest().version, minVersion)) {
-          extensionStatusJSON.status = 400
-          extensionStatusJSON.message = `<strong>MINUTE FLOW is outdated</strong> <br /> Please update to v${minVersion} following the wiki instructions`
-        }
-        else {
-          // Update status based on response
-          extensionStatusJSON.status = result.status
-          // Only override message if status is not 200 (keep local message for success case)
-          if (result.status !== 200) {
-            extensionStatusJSON.message = result.message
-          }
-        }
-
-        console.log("Extension status fetched and saved")
-        resolve("Extension status fetched and saved")
-      })
-      .catch((err) => {
-        console.error(err)
-        reject("Could not fetch extension status")
-
-        logError("008", err)
-      })
-  })
-}
 
 /**
  * @description Attempts to recover last meeting to the best possible extent.
